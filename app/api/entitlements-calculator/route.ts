@@ -19,7 +19,7 @@ function generateFallbackOutput(data: any) {
 
   // Generate HTML similar to what PHP would produce
   let html = `
-    <div style="font-family: system-ui, sans-serif;">
+    <div style="font-family: system-ui, sans-serif; color: #333;">
       <h2 style="color: #333;">${buildingName}</h2>
       <p>Number of units: ${unitsCount}</p>
       <p>Total committee entitlements: ${totalEntitlements}</p>
@@ -27,10 +27,10 @@ function generateFallbackOutput(data: any) {
       <h3>Strata Committee Members</h3>
       <table style="border-collapse: collapse; width: 100%;">
         <tr style="background-color: #f2f2f2;">
-          <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Name</th>
-          <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Role</th>
-          <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Unit</th>
-          <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Entitlements</th>
+          <th style="border: 1px solid #ddd; padding: 8px; text-align: left; color: #333;">Name</th>
+          <th style="border: 1px solid #ddd; padding: 8px; text-align: left; color: #333;">Role</th>
+          <th style="border: 1px solid #ddd; padding: 8px; text-align: left; color: #333;">Unit</th>
+          <th style="border: 1px solid #ddd; padding: 8px; text-align: left; color: #333;">Entitlements</th>
         </tr>
   `
 
@@ -38,10 +38,10 @@ function generateFallbackOutput(data: any) {
   committeeMembers.forEach((member: any) => {
     html += `
       <tr>
-        <td style="border: 1px solid #ddd; padding: 8px;">${member.name}</td>
-        <td style="border: 1px solid #ddd; padding: 8px;">${member.role}</td>
-        <td style="border: 1px solid #ddd; padding: 8px;">${member.unit}</td>
-        <td style="border: 1px solid #ddd; padding: 8px;">${member.entitlements || "N/A"}</td>
+        <td style="border: 1px solid #ddd; padding: 8px; color: #333;">${member.name}</td>
+        <td style="border: 1px solid #ddd; padding: 8px; color: #333;">${member.role}</td>
+        <td style="border: 1px solid #ddd; padding: 8px; color: #333;">${member.unit}</td>
+        <td style="border: 1px solid #ddd; padding: 8px; color: #333;">${member.entitlements || "N/A"}</td>
       </tr>
     `
   })
@@ -50,7 +50,7 @@ function generateFallbackOutput(data: any) {
 
   // Generate a simple chart
   html += `
-    <h3>Entitlements Distribution</h3>
+    <h3 style="color: #333;">Entitlements Distribution</h3>
     <div style="display: flex; height: 200px; align-items: flex-end; margin-top: 20px;">
   `
 
@@ -61,8 +61,8 @@ function generateFallbackOutput(data: any) {
       const color = `hsl(${index * 50}, 70%, 60%)`
       html += `
         <div style="flex: 1; margin: 0 5px; background-color: ${color}; height: ${height}%; position: relative;">
-          <span style="position: absolute; bottom: -25px; left: 0; right: 0; text-align: center; font-size: 12px;">${member.name}</span>
-          <span style="position: absolute; top: -20px; left: 0; right: 0; text-align: center; font-size: 12px;">${member.entitlements}</span>
+          <span style="position: absolute; bottom: -25px; left: 0; right: 0; text-align: center; font-size: 12px; color: #333;">${member.name}</span>
+          <span style="position: absolute; top: -20px; left: 0; right: 0; text-align: center; font-size: 12px; color: #333;">${member.entitlements}</span>
         </div>
       `
     }
@@ -70,7 +70,7 @@ function generateFallbackOutput(data: any) {
 
   html += `
     </div>
-    <p style="margin-top: 40px;">Generated on ${new Date().toLocaleString()}</p>
+    <p style="margin-top: 40px; color: #333;">Generated on ${new Date().toLocaleString()}</p>
   </div>
   `
 
@@ -87,7 +87,7 @@ export async function POST(request: Request) {
       const tempDir = os.tmpdir()
       const phpFilePath = path.join(tempDir, "entitlements.php")
 
-      // Create simplified PHP code
+      // Create simplified PHP code with explicit text color
       const phpCode = `<?php
         $data = json_decode('${JSON.stringify(data)}', true);
         $buildingName = $data['buildingName'];
@@ -100,31 +100,48 @@ export async function POST(request: Request) {
           $totalEntitlements += (int)$member['entitlements'];
         }
         
-        // Output HTML
-        echo "<div style='font-family: system-ui, sans-serif;'>";
+        // Output HTML with explicit text color
+        echo "<div style='font-family: system-ui, sans-serif; color: #333;'>";
         echo "<h2 style='color: #333;'>$buildingName</h2>";
         echo "<p>Number of units: $unitsCount</p>";
         echo "<p>Total committee entitlements: $totalEntitlements</p>";
         
-        echo "<h3>Strata Committee Members</h3>";
+        echo "<h3 style='color: #333;'>Strata Committee Members</h3>";
         echo "<table style='border-collapse: collapse; width: 100%;'>";
         echo "<tr style='background-color: #f2f2f2;'>";
-        echo "<th style='border: 1px solid #ddd; padding: 8px; text-align: left;'>Name</th>";
-        echo "<th style='border: 1px solid #ddd; padding: 8px; text-align: left;'>Role</th>";
-        echo "<th style='border: 1px solid #ddd; padding: 8px; text-align: left;'>Unit</th>";
-        echo "<th style='border: 1px solid #ddd; padding: 8px; text-align: left;'>Entitlements</th>";
+        echo "<th style='border: 1px solid #ddd; padding: 8px; text-align: left; color: #333;'>Name</th>";
+        echo "<th style='border: 1px solid #ddd; padding: 8px; text-align: left; color: #333;'>Role</th>";
+        echo "<th style='border: 1px solid #ddd; padding: 8px; text-align: left; color: #333;'>Unit</th>";
+        echo "<th style='border: 1px solid #ddd; padding: 8px; text-align: left; color: #333;'>Entitlements</th>";
         echo "</tr>";
         
         foreach ($committeeMembers as $member) {
           echo "<tr>";
-          echo "<td style='border: 1px solid #ddd; padding: 8px;'>{$member['name']}</td>";
-          echo "<td style='border: 1px solid #ddd; padding: 8px;'>{$member['role']}</td>";
-          echo "<td style='border: 1px solid #ddd; padding: 8px;'>{$member['unit']}</td>";
-          echo "<td style='border: 1px solid #ddd; padding: 8px;'>{$member['entitlements']}</td>";
+          echo "<td style='border: 1px solid #ddd; padding: 8px; color: #333;'>{$member['name']}</td>";
+          echo "<td style='border: 1px solid #ddd; padding: 8px; color: #333;'>{$member['role']}</td>";
+          echo "<td style='border: 1px solid #ddd; padding: 8px; color: #333;'>{$member['unit']}</td>";
+          echo "<td style='border: 1px solid #ddd; padding: 8px; color: #333;'>{$member['entitlements']}</td>";
           echo "</tr>";
         }
         echo "</table>";
         
+        // Generate a simple chart with explicit text color
+        echo "<h3 style='color: #333;'>Entitlements Distribution</h3>";
+        echo "<div style='display: flex; height: 200px; align-items: flex-end; margin-top: 20px;'>";
+        
+        foreach ($committeeMembers as $index => $member) {
+          if (isset($member['entitlements']) && $member['entitlements'] > 0) {
+            $height = ($member['entitlements'] / 20) * 100;
+            $color = 'hsl(' . ($index * 50) . ', 70%, 60%)';
+            echo "<div style='flex: 1; margin: 0 5px; background-color: $color; height: {$height}%; position: relative;'>";
+            echo "<span style='position: absolute; bottom: -25px; left: 0; right: 0; text-align: center; font-size: 12px; color: #333;'>{$member['name']}</span>";
+            echo "<span style='position: absolute; top: -20px; left: 0; right: 0; text-align: center; font-size: 12px; color: #333;'>{$member['entitlements']}</span>";
+            echo "</div>";
+          }
+        }
+        
+        echo "</div>";
+        echo "<p style='margin-top: 40px; color: #333;'>Generated with PHP on " . date('Y-m-d H:i:s') . "</p>";
         echo "</div>";
       ?>`
 

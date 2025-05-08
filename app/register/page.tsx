@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
+import { getSupabaseBrowserClient } from "@/lib/supabase"
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -22,6 +23,19 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
   const { toast } = useToast()
+  const supabase = getSupabaseBrowserClient()
+
+  // Check if user is already logged in
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getSession()
+      if (data.session) {
+        router.push("/dashboard")
+      }
+    }
+
+    checkSession()
+  }, [router, supabase.auth])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -44,11 +58,33 @@ export default function RegisterPage() {
     }
 
     try {
-      // In a real app, this would be an API call to register the user
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      // Register the user with Supabase
+      const { data, error } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            name: formData.name,
+            unit: formData.unit,
+          },
+        },
+      })
 
-      // Set a cookie to track the registered user
-      document.cookie = `user=${formData.email}; path=/; max-age=3600`
+      if (error) {
+        throw error
+      }
+
+      // Update the user's profile with unit information
+      if (data.user) {
+        const { error: profileError } = await supabase
+          .from("profiles")
+          .update({ unit: formData.unit })
+          .eq("id", data.user.id)
+
+        if (profileError) {
+          console.error("Error updating profile:", profileError)
+        }
+      }
 
       toast({
         title: "Registration successful",
@@ -56,10 +92,11 @@ export default function RegisterPage() {
       })
 
       router.push("/dashboard")
-    } catch (error) {
+      router.refresh()
+    } catch (error: any) {
       toast({
         title: "Registration failed",
-        description: "There was an error creating your account. Please try again.",
+        description: error.message || "There was an error creating your account. Please try again.",
         variant: "destructive",
       })
     } finally {

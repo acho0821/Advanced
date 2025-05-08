@@ -11,41 +11,86 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FileText, Users, CreditCard, BarChart3, Wrench, Building } from "lucide-react"
+import { getSupabaseBrowserClient } from "@/lib/supabase"
 
 export default function DashboardPage() {
-  const [user, setUser] = useState<string | null>(null)
+  const [user, setUser] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
   const router = useRouter()
+  const supabase = getSupabaseBrowserClient()
 
   useEffect(() => {
-    // Check for user cookie
-    const cookies = document.cookie.split(";")
-    const userCookie = cookies.find((cookie) => cookie.trim().startsWith("user="))
+    const checkSession = async () => {
+      try {
+        setLoading(true)
+        const { data, error } = await supabase.auth.getSession()
 
-    if (userCookie) {
-      const userEmail = userCookie.split("=")[1]
-      setUser(userEmail)
-    } else {
-      // Redirect to login if no user cookie found
-      router.push("/login")
+        if (error) {
+          throw error
+        }
+
+        if (!data.session) {
+          router.push("/login")
+          return
+        }
+
+        // Get user profile data
+        const { data: profileData, error: profileError } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", data.session.user.id)
+          .single()
+
+        if (profileError && profileError.code !== "PGRST116") {
+          console.error("Error fetching profile:", profileError)
+        }
+
+        setUser({
+          ...data.session.user,
+          profile: profileData || {},
+        })
+      } catch (error) {
+        console.error("Session error:", error)
+        router.push("/login")
+      } finally {
+        setLoading(false)
+      }
     }
-  }, [router])
 
-  const handleLogout = () => {
-    // Clear the user cookie
-    document.cookie = "user=; path=/; max-age=0"
-    router.push("/login")
+    checkSession()
+  }, [router, supabase])
+
+  const handleLogout = async () => {
+    try {
+      const { error } = await supabase.auth.signOut()
+
+      if (error) {
+        throw error
+      }
+
+      router.push("/login")
+      router.refresh()
+    } catch (error) {
+      console.error("Logout error:", error)
+    }
+  }
+
+  if (loading) {
+    return <div className="container mx-auto p-8 text-center">Loading...</div>
   }
 
   if (!user) {
-    return <div className="container mx-auto p-8 text-center">Loading...</div>
+    return <div className="container mx-auto p-8 text-center">Redirecting to login...</div>
   }
+
+  const displayName = user.profile?.name || user.email
 
   return (
     <div className="container mx-auto p-4 md:p-8">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div>
           <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground">Welcome back, {user}</p>
+          <p className="text-muted-foreground">Welcome back, {displayName}</p>
         </div>
         <Button variant="outline" onClick={handleLogout}>
           Logout

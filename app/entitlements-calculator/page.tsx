@@ -220,7 +220,7 @@ export default function EntitlementsCalculatorPage() {
         </div>
 
         <div>
-          <Card>
+          <Card className="bg-white">
             <CardHeader>
               <CardTitle>Calculation Results</CardTitle>
             </CardHeader>

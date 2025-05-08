@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
+import { getSupabaseBrowserClient } from "@/lib/supabase"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -17,18 +18,33 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
   const { toast } = useToast()
+  const supabase = getSupabaseBrowserClient()
+
+  // Check if user is already logged in
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getSession()
+      if (data.session) {
+        router.push("/dashboard")
+      }
+    }
+
+    checkSession()
+  }, [router, supabase.auth])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
 
     try {
-      // In a real app, this would be an API call to authenticate
-      // For demo purposes, we'll simulate a successful login
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
 
-      // Set a cookie to track the logged-in user
-      document.cookie = `user=${email}; path=/; max-age=3600`
+      if (error) {
+        throw error
+      }
 
       toast({
         title: "Login successful",
@@ -36,10 +52,11 @@ export default function LoginPage() {
       })
 
       router.push("/dashboard")
-    } catch (error) {
+      router.refresh()
+    } catch (error: any) {
       toast({
         title: "Login failed",
-        description: "Please check your credentials and try again.",
+        description: error.message || "Please check your credentials and try again.",
         variant: "destructive",
       })
     } finally {
