@@ -10,7 +10,7 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { FileText, Users, CreditCard, BarChart3, Wrench, Building } from "lucide-react"
+import { FileText, Users, CreditCard, BarChart3, Wrench, Building, Settings } from "lucide-react"
 import { getSupabaseBrowserClient } from "@/lib/supabase"
 
 export default function DashboardPage() {
@@ -95,9 +95,19 @@ export default function DashboardPage() {
           <p className="text-muted-foreground">Welcome back, {displayName}</p>
           <p className="text-sm text-muted-foreground">Role: {userRole === "admin" ? "Administrator" : "User"}</p>
         </div>
-        <Button variant="outline" onClick={handleLogout}>
-          Logout
-        </Button>
+        <div className="flex gap-2">
+          {isAdmin && (
+            <Button variant="outline" asChild>
+              <Link href="/admin/storage-diagnostic">
+                <Settings className="h-4 w-4 mr-2" />
+                Storage Diagnostic
+              </Link>
+            </Button>
+          )}
+          <Button variant="outline" onClick={handleLogout}>
+            Logout
+          </Button>
+        </div>
       </div>
 
       <Tabs defaultValue="overview" className="w-full">

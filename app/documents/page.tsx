@@ -12,6 +12,7 @@ import { FileText, Download, Upload, Trash2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { getSupabaseBrowserClient } from "@/lib/supabase"
 import { useRouter } from "next/navigation"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 interface Document {
   id: string
@@ -32,6 +33,7 @@ export default function DocumentsPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [documentName, setDocumentName] = useState("")
   const [documentType, setDocumentType] = useState("insurance")
+  const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
   const supabase = getSupabaseBrowserClient()
@@ -71,7 +73,17 @@ export default function DocumentsPage() {
       }
     }
 
+    const initializeStorage = async () => {
+      try {
+        // Initialize storage bucket
+        await fetch("/api/storage/init")
+      } catch (error) {
+        console.error("Error initializing storage:", error)
+      }
+    }
+
     checkSession()
+    initializeStorage()
     fetchDocuments()
   }, [router, supabase])
 
@@ -109,6 +121,7 @@ export default function DocumentsPage() {
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault()
+    setError(null)
 
     if (!selectedFile) {
       toast({
@@ -131,12 +144,17 @@ export default function DocumentsPage() {
     try {
       setUploading(true)
 
-      // Upload file to Supabase Storage
+      // Generate a unique file name to prevent collisions
+      const timestamp = new Date().getTime()
       const fileExt = selectedFile.name.split(".").pop()
-      const fileName = `${Math.random().toString(36).substring(2, 15)}.${fileExt}`
-      const filePath = `documents/${fileName}`
+      const fileName = `${timestamp}_${Math.random().toString(36).substring(2, 15)}.${fileExt}`
+      const filePath = `${fileName}`
 
-      const { error: uploadError } = await supabase.storage.from("strata-documents").upload(filePath, selectedFile)
+      // Upload file to Supabase Storage
+      const { error: uploadError } = await supabase.storage.from("strata-documents").upload(filePath, selectedFile, {
+        cacheControl: "3600",
+        upsert: false,
+      })
 
       if (uploadError) {
         throw uploadError
@@ -176,6 +194,7 @@ export default function DocumentsPage() {
       fetchDocuments()
     } catch (error: any) {
       console.error("Error uploading document:", error)
+      setError(error.message || "Failed to upload document")
       toast({
         title: "Error",
         description: error.message || "Failed to upload document",
@@ -359,6 +378,11 @@ export default function DocumentsPage() {
                 <CardDescription>Add a new document to the repository</CardDescription>
               </CardHeader>
               <CardContent>
+                {error && (
+                  <Alert variant="destructive" className="mb-4">
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
                 <form onSubmit={handleUpload} className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="file">Select File</Label>
