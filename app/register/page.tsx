@@ -64,6 +64,8 @@ export default function RegisterPage() {
     }
 
     try {
+      console.log("Registering with role:", formData.role)
+
       // Register the user with Supabase
       const { data, error } = await supabase.auth.signUp({
         email: formData.email,
@@ -81,18 +83,19 @@ export default function RegisterPage() {
         throw error
       }
 
-      // Update the user's profile with unit information and role
+      // Important: We need to explicitly insert the profile with the correct role
       if (data.user) {
-        const { error: profileError } = await supabase
-          .from("profiles")
-          .update({
-            unit: formData.unit,
-            role: formData.role,
-          })
-          .eq("id", data.user.id)
+        const { error: profileError } = await supabase.from("profiles").upsert({
+          id: data.user.id,
+          name: formData.name,
+          unit: formData.unit,
+          role: formData.role, // Explicitly set the role
+          email: formData.email,
+        })
 
         if (profileError) {
           console.error("Error updating profile:", profileError)
+          throw profileError
         }
       }
 

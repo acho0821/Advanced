@@ -10,12 +10,14 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { FileText, Users, CreditCard, BarChart3, Wrench, Building, Settings } from "lucide-react"
+import { FileText, Users, CreditCard, BarChart3, Wrench, Building, Settings, UserCog } from "lucide-react"
 import { getSupabaseBrowserClient } from "@/lib/supabase"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 export default function DashboardPage() {
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [isAdmin, setIsAdmin] = useState(false)
   const router = useRouter()
   const supabase = getSupabaseBrowserClient()
 
@@ -49,6 +51,8 @@ export default function DashboardPage() {
           ...data.session.user,
           profile: profileData || {},
         })
+
+        setIsAdmin(profileData?.role === "admin")
       } catch (error) {
         console.error("Session error:", error)
         router.push("/login")
@@ -85,7 +89,6 @@ export default function DashboardPage() {
 
   const displayName = user.profile?.name || user.email
   const userRole = user.profile?.role || "user"
-  const isAdmin = userRole === "admin"
 
   return (
     <div className="container mx-auto p-4 md:p-8">
@@ -96,19 +99,43 @@ export default function DashboardPage() {
           <p className="text-sm text-muted-foreground">Role: {userRole === "admin" ? "Administrator" : "User"}</p>
         </div>
         <div className="flex gap-2">
-          {isAdmin && (
-            <Button variant="outline" asChild>
-              <Link href="/admin/storage-diagnostic">
-                <Settings className="h-4 w-4 mr-2" />
-                Storage Diagnostic
-              </Link>
-            </Button>
+          {isAdmin ? (
+            <>
+              <Button variant="outline" asChild>
+                <Link href="/admin/storage-diagnostic">
+                  <Settings className="h-4 w-4 mr-2" />
+                  Storage Diagnostic
+                </Link>
+              </Button>
+              <Button variant="outline" onClick={handleLogout}>
+                Logout
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" asChild>
+                <Link href="/admin/make-admin">
+                  <UserCog className="h-4 w-4 mr-2" />
+                  Make Admin
+                </Link>
+              </Button>
+              <Button variant="outline" onClick={handleLogout}>
+                Logout
+              </Button>
+            </>
           )}
-          <Button variant="outline" onClick={handleLogout}>
-            Logout
-          </Button>
         </div>
       </div>
+
+      {!isAdmin && (
+        <Alert className="mb-6">
+          <AlertTitle>Not an Admin</AlertTitle>
+          <AlertDescription>
+            Your account is currently set as a regular user. Some features may be restricted. If you need admin access,
+            please use the "Make Admin" button above.
+          </AlertDescription>
+        </Alert>
+      )}
 
       <Tabs defaultValue="overview" className="w-full">
         <TabsList className="grid grid-cols-3 md:grid-cols-6 mb-8">
