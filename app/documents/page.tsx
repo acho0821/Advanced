@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -10,85 +10,81 @@ import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { FileText, Download, Upload, Trash2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { getSupabaseBrowserClient } from "@/lib/supabase"
+import { useRouter } from "next/navigation"
 
 interface Document {
-  id: number
+  id: string
   name: string
   type: string
-  size: string
-  uploadedBy: string
-  uploadedAt: string
-  url: string
+  file_path: string
+  file_size: number
+  uploaded_by: string
+  created_at: string
 }
 
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<Document[]>([])
   const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [user, setUser] = useState<any>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [documentName, setDocumentName] = useState("")
   const [documentType, setDocumentType] = useState("insurance")
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
+  const supabase = getSupabaseBrowserClient()
+  const router = useRouter()
 
   useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const { data, error } = await supabase.auth.getSession()
+
+        if (error || !data.session) {
+          router.push("/login")
+          return
+        }
+
+        // Get user profile data
+        const { data: profileData, error: profileError } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", data.session.user.id)
+          .single()
+
+        if (profileError) {
+          console.error("Error fetching profile:", profileError)
+          return
+        }
+
+        setUser({
+          ...data.session.user,
+          profile: profileData,
+        })
+
+        setIsAdmin(profileData.role === "admin")
+      } catch (error) {
+        console.error("Session error:", error)
+        router.push("/login")
+      }
+    }
+
+    checkSession()
     fetchDocuments()
-  }, [])
+  }, [router, supabase])
 
   const fetchDocuments = async () => {
     try {
       setLoading(true)
-      // In a real app, this would be an API call
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      const { data, error } = await supabase.from("documents").select("*").order("created_at", { ascending: false })
 
-      // Mock data
-      const mockDocuments: Document[] = [
-        {
-          id: 1,
-          name: "Building Insurance Certificate",
-          type: "insurance",
-          size: "1.2 MB",
-          uploadedBy: "John Smith",
-          uploadedAt: "2023-05-10T14:30:00Z",
-          url: "#",
-        },
-        {
-          id: 2,
-          name: "Annual Financial Report 2023",
-          type: "financial",
-          size: "3.5 MB",
-          uploadedBy: "Sarah Johnson",
-          uploadedAt: "2023-04-15T09:45:00Z",
-          url: "#",
-        },
-        {
-          id: 3,
-          name: "Building Bylaws",
-          type: "legal",
-          size: "0.8 MB",
-          uploadedBy: "Michael Wong",
-          uploadedAt: "2023-03-22T11:20:00Z",
-          url: "#",
-        },
-        {
-          id: 4,
-          name: "AGM Minutes - March 2023",
-          type: "minutes",
-          size: "1.5 MB",
-          uploadedBy: "Emma Davis",
-          uploadedAt: "2023-03-15T16:10:00Z",
-          url: "#",
-        },
-        {
-          id: 5,
-          name: "Fire Safety Compliance Certificate",
-          type: "compliance",
-          size: "0.6 MB",
-          uploadedBy: "John Smith",
-          uploadedAt: "2023-02-28T13:40:00Z",
-          url: "#",
-        },
-      ]
+      if (error) {
+        throw error
+      }
 
-      setDocuments(mockDocuments)
+      setDocuments(data || [])
     } catch (error) {
       console.error("Error fetching documents:", error)
       toast({
@@ -123,51 +119,140 @@ export default function DocumentsPage() {
       return
     }
 
-    try {
-      // In a real app, this would be an API call to upload the file
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+    if (!isAdmin) {
+      toast({
+        title: "Error",
+        description: "Only administrators can upload documents",
+        variant: "destructive",
+      })
+      return
+    }
 
-      // Create a new document object
-      const newDocument: Document = {
-        id: documents.length + 1,
-        name: documentName || selectedFile.name,
-        type: documentType,
-        size: formatFileSize(selectedFile.size),
-        uploadedBy: "Current User", // In a real app, this would be the logged-in user
-        uploadedAt: new Date().toISOString(),
-        url: "#",
+    try {
+      setUploading(true)
+
+      // Upload file to Supabase Storage
+      const fileExt = selectedFile.name.split(".").pop()
+      const fileName = `${Math.random().toString(36).substring(2, 15)}.${fileExt}`
+      const filePath = `documents/${fileName}`
+
+      const { error: uploadError } = await supabase.storage.from("strata-documents").upload(filePath, selectedFile)
+
+      if (uploadError) {
+        throw uploadError
       }
 
-      // Add the new document to the list
-      setDocuments([newDocument, ...documents])
+      // Get the public URL
+      const { data: urlData } = supabase.storage.from("strata-documents").getPublicUrl(filePath)
+
+      // Add document record to the database
+      const { error: dbError } = await supabase.from("documents").insert({
+        name: documentName || selectedFile.name,
+        type: documentType,
+        file_path: filePath,
+        file_size: selectedFile.size,
+        uploaded_by: user.id,
+      })
+
+      if (dbError) {
+        throw dbError
+      }
 
       // Reset form
       setSelectedFile(null)
       setDocumentName("")
       setDocumentType("insurance")
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ""
+      }
 
       // Show success message
       toast({
         title: "Success",
         description: "Document uploaded successfully",
       })
-    } catch (error) {
+
+      // Refresh documents list
+      fetchDocuments()
+    } catch (error: any) {
       console.error("Error uploading document:", error)
       toast({
         title: "Error",
-        description: "Failed to upload document",
+        description: error.message || "Failed to upload document",
+        variant: "destructive",
+      })
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleDownload = async (document: Document) => {
+    try {
+      const { data, error } = await supabase.storage.from("strata-documents").download(document.file_path)
+
+      if (error) {
+        throw error
+      }
+
+      // Create a download link
+      const url = URL.createObjectURL(data)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = document.name
+      document.body.appendChild(a)
+      a.click()
+      URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch (error: any) {
+      console.error("Error downloading document:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to download document",
         variant: "destructive",
       })
     }
   }
 
-  const handleDelete = (id: number) => {
-    // In a real app, this would be an API call to delete the document
-    setDocuments(documents.filter((doc) => doc.id !== id))
-    toast({
-      title: "Success",
-      description: "Document deleted successfully",
-    })
+  const handleDelete = async (id: string, filePath: string) => {
+    if (!isAdmin) {
+      toast({
+        title: "Error",
+        description: "Only administrators can delete documents",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      // Delete file from storage
+      const { error: storageError } = await supabase.storage.from("strata-documents").remove([filePath])
+
+      if (storageError) {
+        console.error("Error deleting file from storage:", storageError)
+      }
+
+      // Delete record from database
+      const { error: dbError } = await supabase.from("documents").delete().eq("id", id)
+
+      if (dbError) {
+        throw dbError
+      }
+
+      toast({
+        title: "Success",
+        description: "Document deleted successfully",
+      })
+
+      // Refresh documents list
+      fetchDocuments()
+    } catch (error: any) {
+      console.error("Error deleting document:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete document",
+        variant: "destructive",
+      })
+    }
   }
 
   const formatFileSize = (bytes: number): string => {
@@ -216,7 +301,6 @@ export default function DocumentsPage() {
                       <TableHead>Name</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead>Size</TableHead>
-                      <TableHead>Uploaded By</TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
@@ -232,24 +316,30 @@ export default function DocumentsPage() {
                             </div>
                           </TableCell>
                           <TableCell>{getDocumentTypeLabel(doc.type)}</TableCell>
-                          <TableCell>{doc.size}</TableCell>
-                          <TableCell>{doc.uploadedBy}</TableCell>
-                          <TableCell>{formatDate(doc.uploadedAt)}</TableCell>
+                          <TableCell>{formatFileSize(doc.file_size)}</TableCell>
+                          <TableCell>{formatDate(doc.created_at)}</TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
-                              <Button variant="ghost" size="icon" title="Download">
+                              <Button variant="ghost" size="icon" title="Download" onClick={() => handleDownload(doc)}>
                                 <Download className="h-4 w-4" />
                               </Button>
-                              <Button variant="ghost" size="icon" title="Delete" onClick={() => handleDelete(doc.id)}>
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                              {isAdmin && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  title="Delete"
+                                  onClick={() => handleDelete(doc.id, doc.file_path)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center">
+                        <TableCell colSpan={5} className="text-center">
                           No documents found
                         </TableCell>
                       </TableRow>
@@ -261,54 +351,56 @@ export default function DocumentsPage() {
           </Card>
         </div>
 
-        <div>
-          <Card>
-            <CardHeader>
-              <CardTitle>Upload Document</CardTitle>
-              <CardDescription>Add a new document to the repository</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleUpload} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="file">Select File</Label>
-                  <Input id="file" type="file" onChange={handleFileChange} />
-                </div>
+        {isAdmin && (
+          <div>
+            <Card>
+              <CardHeader>
+                <CardTitle>Upload Document</CardTitle>
+                <CardDescription>Add a new document to the repository</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleUpload} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="file">Select File</Label>
+                    <Input id="file" type="file" ref={fileInputRef} onChange={handleFileChange} />
+                  </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="name">Document Name</Label>
-                  <Input
-                    id="name"
-                    value={documentName}
-                    onChange={(e) => setDocumentName(e.target.value)}
-                    placeholder="Enter document name"
-                  />
-                </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Document Name</Label>
+                    <Input
+                      id="name"
+                      value={documentName}
+                      onChange={(e) => setDocumentName(e.target.value)}
+                      placeholder="Enter document name"
+                    />
+                  </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="type">Document Type</Label>
-                  <select
-                    id="type"
-                    value={documentType}
-                    onChange={(e) => setDocumentType(e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <option value="insurance">Insurance</option>
-                    <option value="financial">Financial</option>
-                    <option value="legal">Legal</option>
-                    <option value="minutes">Meeting Minutes</option>
-                    <option value="compliance">Compliance</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="type">Document Type</Label>
+                    <select
+                      id="type"
+                      value={documentType}
+                      onChange={(e) => setDocumentType(e.target.value)}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <option value="insurance">Insurance</option>
+                      <option value="financial">Financial</option>
+                      <option value="legal">Legal</option>
+                      <option value="minutes">Meeting Minutes</option>
+                      <option value="compliance">Compliance</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
 
-                <Button type="submit" className="w-full" disabled={!selectedFile}>
-                  <Upload className="h-4 w-4 mr-2" />
-                  Upload Document
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        </div>
+                  <Button type="submit" className="w-full" disabled={uploading || !selectedFile}>
+                    <Upload className="h-4 w-4 mr-2" />
+                    {uploading ? "Uploading..." : "Upload Document"}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
     </div>
   )

@@ -11,40 +11,90 @@ import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
+import { getSupabaseBrowserClient } from "@/lib/supabase"
+import { useRouter } from "next/navigation"
 
 interface MaintenanceRequest {
-  id: number
+  id: string
   unit: string
   title: string
   description: string
   status: "pending" | "in-progress" | "completed"
-  createdAt: string
-  updatedAt: string
+  created_at: string
+  updated_at: string
+  user_id: string
 }
 
 export default function MaintenancePage() {
   const [requests, setRequests] = useState<MaintenanceRequest[]>([])
   const [loading, setLoading] = useState(true)
+  const [user, setUser] = useState<any>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [newRequest, setNewRequest] = useState({
     unit: "",
     title: "",
     description: "",
   })
   const { toast } = useToast()
+  const supabase = getSupabaseBrowserClient()
+  const router = useRouter()
 
   useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const { data, error } = await supabase.auth.getSession()
+
+        if (error || !data.session) {
+          router.push("/login")
+          return
+        }
+
+        // Get user profile data
+        const { data: profileData, error: profileError } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", data.session.user.id)
+          .single()
+
+        if (profileError) {
+          console.error("Error fetching profile:", profileError)
+          return
+        }
+
+        setUser({
+          ...data.session.user,
+          profile: profileData,
+        })
+
+        setIsAdmin(profileData.role === "admin")
+
+        // Set default unit from user profile
+        if (profileData.unit) {
+          setNewRequest((prev) => ({ ...prev, unit: profileData.unit }))
+        }
+      } catch (error) {
+        console.error("Session error:", error)
+        router.push("/login")
+      }
+    }
+
+    checkSession()
     fetchRequests()
-  }, [])
+  }, [router, supabase])
 
   const fetchRequests = async () => {
     try {
       setLoading(true)
-      const response = await fetch("/api/maintenance")
-      const data = await response.json()
+      const { data, error } = await supabase
+        .from("maintenance_requests")
+        .select("*")
+        .order("created_at", { ascending: false })
 
-      if (data.requests) {
-        setRequests(data.requests)
+      if (error) {
+        throw error
       }
+
+      setRequests(data || [])
     } catch (error) {
       console.error("Error fetching maintenance requests:", error)
       toast({
@@ -65,44 +115,78 @@ export default function MaintenancePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    if (!user) {
+      toast({
+        title: "Error",
+        description: "You must be logged in to submit a maintenance request",
+        variant: "destructive",
+      })
+      return
+    }
+
     try {
-      const response = await fetch("/api/maintenance", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(newRequest),
+      const { data, error } = await supabase
+        .from("maintenance_requests")
+        .insert({
+          user_id: user.id,
+          unit: newRequest.unit,
+          title: newRequest.title,
+          description: newRequest.description,
+          status: "pending",
+        })
+        .select()
+
+      if (error) {
+        throw error
+      }
+
+      toast({
+        title: "Success",
+        description: "Maintenance request submitted successfully",
       })
 
-      const data = await response.json()
+      // Reset form
+      setNewRequest({
+        unit: user.profile?.unit || "",
+        title: "",
+        description: "",
+      })
 
-      if (data.success) {
-        toast({
-          title: "Success",
-          description: "Maintenance request submitted successfully",
-        })
-
-        // Reset form
-        setNewRequest({
-          unit: "",
-          title: "",
-          description: "",
-        })
-
-        // Refresh requests list
-        fetchRequests()
-      } else {
-        toast({
-          title: "Error",
-          description: data.error || "Failed to submit maintenance request",
-          variant: "destructive",
-        })
-      }
-    } catch (error) {
+      // Refresh requests list
+      fetchRequests()
+    } catch (error: any) {
       console.error("Error submitting maintenance request:", error)
       toast({
         title: "Error",
-        description: "Failed to submit maintenance request",
+        description: error.message || "Failed to submit maintenance request",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleUpdateStatus = async (id: string, newStatus: "pending" | "in-progress" | "completed") => {
+    try {
+      const { error } = await supabase
+        .from("maintenance_requests")
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq("id", id)
+
+      if (error) {
+        throw error
+      }
+
+      toast({
+        title: "Success",
+        description: "Request status updated successfully",
+      })
+
+      // Refresh requests list
+      fetchRequests()
+    } catch (error: any) {
+      console.error("Error updating request status:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update request status",
         variant: "destructive",
       })
     }
@@ -161,6 +245,7 @@ export default function MaintenancePage() {
                       <TableHead>Status</TableHead>
                       <TableHead>Created</TableHead>
                       <TableHead>Updated</TableHead>
+                      {isAdmin && <TableHead>Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -173,13 +258,46 @@ export default function MaintenancePage() {
                             <div className="text-sm text-muted-foreground">{request.description}</div>
                           </TableCell>
                           <TableCell>{getStatusBadge(request.status)}</TableCell>
-                          <TableCell>{formatDate(request.createdAt)}</TableCell>
-                          <TableCell>{formatDate(request.updatedAt)}</TableCell>
+                          <TableCell>{formatDate(request.created_at)}</TableCell>
+                          <TableCell>{formatDate(request.updated_at)}</TableCell>
+                          {isAdmin && (
+                            <TableCell>
+                              <div className="flex flex-col gap-2">
+                                {request.status === "pending" && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleUpdateStatus(request.id, "in-progress")}
+                                  >
+                                    Mark In Progress
+                                  </Button>
+                                )}
+                                {request.status === "in-progress" && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleUpdateStatus(request.id, "completed")}
+                                  >
+                                    Mark Completed
+                                  </Button>
+                                )}
+                                {request.status === "completed" && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleUpdateStatus(request.id, "pending")}
+                                  >
+                                    Reopen
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          )}
                         </TableRow>
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center">
+                        <TableCell colSpan={isAdmin ? 6 : 5} className="text-center">
                           No maintenance requests found
                         </TableCell>
                       </TableRow>

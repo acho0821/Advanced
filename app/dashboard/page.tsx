@@ -84,6 +84,8 @@ export default function DashboardPage() {
   }
 
   const displayName = user.profile?.name || user.email
+  const userRole = user.profile?.role || "user"
+  const isAdmin = userRole === "admin"
 
   return (
     <div className="container mx-auto p-4 md:p-8">
@@ -91,6 +93,7 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-3xl font-bold">Dashboard</h1>
           <p className="text-muted-foreground">Welcome back, {displayName}</p>
+          <p className="text-sm text-muted-foreground">Role: {userRole === "admin" ? "Administrator" : "User"}</p>
         </div>
         <Button variant="outline" onClick={handleLogout}>
           Logout
@@ -112,7 +115,7 @@ export default function DashboardPage() {
             <DashboardCard
               icon={<FileText className="h-6 w-6" />}
               title="Documents"
-              description="5 new documents uploaded"
+              description={isAdmin ? "Upload and manage documents" : "View and download documents"}
               href="/documents"
             />
             <DashboardCard
@@ -136,13 +139,13 @@ export default function DashboardPage() {
             <DashboardCard
               icon={<Wrench className="h-6 w-6" />}
               title="Maintenance"
-              description="3 pending maintenance requests"
+              description="Submit and track maintenance requests"
               href="/maintenance"
             />
             <DashboardCard
               icon={<Building className="h-6 w-6" />}
               title="Building Info"
-              description="Last updated 7 days ago"
+              description="View building details and amenities"
               href="/building-info"
             />
           </div>
@@ -155,10 +158,10 @@ export default function DashboardPage() {
               <CardDescription>Access and manage building documents</CardDescription>
             </CardHeader>
             <CardContent>
-              <p>Document management functionality will be implemented here.</p>
-              <p className="text-muted-foreground mt-2">
-                This will connect to the database to store and retrieve documents.
-              </p>
+              <p>View the documents page to access building documents.</p>
+              {isAdmin && (
+                <p className="text-muted-foreground mt-2">As an administrator, you can upload and manage documents.</p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -215,9 +218,9 @@ export default function DashboardPage() {
               <CardDescription>Track maintenance requests and work orders</CardDescription>
             </CardHeader>
             <CardContent>
-              <p>Maintenance management functionality will be implemented here.</p>
+              <p>Submit and track maintenance requests for your unit.</p>
               <p className="text-muted-foreground mt-2">
-                This will connect to the database to store and retrieve maintenance information.
+                All requests are stored in the database and can be tracked through their lifecycle.
               </p>
             </CardContent>
           </Card>

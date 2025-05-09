@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { useToast } from "@/hooks/use-toast"
 import { getSupabaseBrowserClient } from "@/lib/supabase"
 
@@ -19,6 +20,7 @@ export default function RegisterPage() {
     unit: "",
     password: "",
     confirmPassword: "",
+    role: "user", // Default role is user
   })
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
@@ -40,6 +42,10 @@ export default function RegisterPage() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
     setFormData((prev) => ({ ...prev, [name]: value }))
+  }
+
+  const handleRoleChange = (value: string) => {
+    setFormData((prev) => ({ ...prev, role: value }))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -66,6 +72,7 @@ export default function RegisterPage() {
           data: {
             name: formData.name,
             unit: formData.unit,
+            role: formData.role,
           },
         },
       })
@@ -74,11 +81,14 @@ export default function RegisterPage() {
         throw error
       }
 
-      // Update the user's profile with unit information
+      // Update the user's profile with unit information and role
       if (data.user) {
         const { error: profileError } = await supabase
           .from("profiles")
-          .update({ unit: formData.unit })
+          .update({
+            unit: formData.unit,
+            role: formData.role,
+          })
           .eq("id", data.user.id)
 
         if (profileError) {
@@ -146,6 +156,19 @@ export default function RegisterPage() {
                 placeholder="e.g., 101"
                 required
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Account Type</Label>
+              <RadioGroup value={formData.role} onValueChange={handleRoleChange} className="flex space-x-4">
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="user" id="user" />
+                  <Label htmlFor="user">User</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="admin" id="admin" />
+                  <Label htmlFor="admin">Admin</Label>
+                </div>
+              </RadioGroup>
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
