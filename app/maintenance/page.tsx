@@ -13,6 +13,18 @@ import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { getSupabaseBrowserClient } from "@/lib/supabase"
 import { useRouter } from "next/navigation"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import { CheckCircle } from "lucide-react"
 
 interface MaintenanceRequest {
   id: string
@@ -192,6 +204,32 @@ export default function MaintenancePage() {
     }
   }
 
+  const handleCompleteRequest = async (id: string) => {
+    try {
+      // Delete the maintenance request from the database
+      const { error } = await supabase.from("maintenance_requests").delete().eq("id", id)
+
+      if (error) {
+        throw error
+      }
+
+      toast({
+        title: "Success",
+        description: "Maintenance request completed and removed",
+      })
+
+      // Refresh requests list
+      fetchRequests()
+    } catch (error: any) {
+      console.error("Error completing maintenance request:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to complete maintenance request",
+        variant: "destructive",
+      })
+    }
+  }
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "pending":
@@ -245,7 +283,7 @@ export default function MaintenancePage() {
                       <TableHead>Status</TableHead>
                       <TableHead>Created</TableHead>
                       <TableHead>Updated</TableHead>
-                      {isAdmin && <TableHead>Actions</TableHead>}
+                      <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -260,44 +298,64 @@ export default function MaintenancePage() {
                           <TableCell>{getStatusBadge(request.status)}</TableCell>
                           <TableCell>{formatDate(request.created_at)}</TableCell>
                           <TableCell>{formatDate(request.updated_at)}</TableCell>
-                          {isAdmin && (
-                            <TableCell>
-                              <div className="flex flex-col gap-2">
-                                {request.status === "pending" && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => handleUpdateStatus(request.id, "in-progress")}
-                                  >
-                                    Mark In Progress
-                                  </Button>
-                                )}
-                                {request.status === "in-progress" && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => handleUpdateStatus(request.id, "completed")}
-                                  >
-                                    Mark Completed
-                                  </Button>
-                                )}
-                                {request.status === "completed" && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => handleUpdateStatus(request.id, "pending")}
-                                  >
-                                    Reopen
-                                  </Button>
-                                )}
-                              </div>
-                            </TableCell>
-                          )}
+                          <TableCell>
+                            <div className="flex flex-col gap-2">
+                              {isAdmin && (
+                                <>
+                                  {request.status === "pending" && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleUpdateStatus(request.id, "in-progress")}
+                                    >
+                                      Mark In Progress
+                                    </Button>
+                                  )}
+                                  {request.status === "in-progress" && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleUpdateStatus(request.id, "completed")}
+                                    >
+                                      Mark Completed
+                                    </Button>
+                                  )}
+                                  <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="bg-green-50 text-green-700 border-green-200 hover:bg-green-100 hover:text-green-800"
+                                      >
+                                        <CheckCircle className="h-4 w-4 mr-2" />
+                                        Complete
+                                      </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle>Complete Maintenance Request</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                          This will mark the request as completed and remove it from the system. This
+                                          action cannot be undone.
+                                        </AlertDialogDescription>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction onClick={() => handleCompleteRequest(request.id)}>
+                                          Complete
+                                        </AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
+                                </>
+                              )}
+                            </div>
+                          </TableCell>
                         </TableRow>
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={isAdmin ? 6 : 5} className="text-center">
+                        <TableCell colSpan={6} className="text-center">
                           No maintenance requests found
                         </TableCell>
                       </TableRow>
