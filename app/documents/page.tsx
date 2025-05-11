@@ -132,17 +132,30 @@ export default function DocumentsPage() {
     try {
       setUploading(true)
 
-      // Simple file path - just use the original filename
-      const filePath = `${Date.now()}_${selectedFile.name.replace(/\s+/g, "_")}`
+      // Create a unique file path to avoid conflicts
+      const timestamp = Date.now()
+      const fileExt = selectedFile.name.split(".").pop()
+      const filePath = `${timestamp}_${selectedFile.name.replace(/\s+/g, "_")}`
+
+      console.log("Uploading file:", filePath)
 
       // Upload file to Supabase Storage
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from("strata-documents")
-        .upload(filePath, selectedFile)
+        .upload(filePath, selectedFile, {
+          cacheControl: "3600",
+          upsert: false,
+        })
 
       if (uploadError) {
+        console.error("Upload error:", uploadError)
         throw uploadError
       }
+
+      console.log("Upload successful:", uploadData)
+
+      // Get the public URL for the uploaded file
+      const { data: urlData } = supabase.storage.from("strata-documents").getPublicUrl(filePath)
 
       // Add document record to the database
       const { error: dbError } = await supabase.from("documents").insert({
@@ -154,6 +167,7 @@ export default function DocumentsPage() {
       })
 
       if (dbError) {
+        console.error("Database error:", dbError)
         throw dbError
       }
 
