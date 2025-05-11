@@ -23,7 +23,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { CheckCircle, Bug } from "lucide-react"
+import { CheckCircle, AlertCircle } from "lucide-react"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 interface MaintenanceRequest {
   id: string
@@ -46,9 +47,10 @@ export default function MaintenancePage() {
     title: "",
     description: "",
   })
-  const [showDebug, setShowDebug] = useState(false)
-  const [debugInfo, setDebugInfo] = useState<any>(null)
   const [requestToDelete, setRequestToDelete] = useState<string | null>(null)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
   const { toast } = useToast()
   const supabase = getSupabaseBrowserClient()
   const router = useRouter()
@@ -211,17 +213,25 @@ export default function MaintenancePage() {
     if (!requestToDelete) return
 
     try {
-      if (showDebug) {
-        console.log("Deleting request with ID:", requestToDelete)
-      }
+      setDeleteLoading(true)
+      setDeleteError(null)
 
-      const { error } = await supabase.from("maintenance_requests").delete().eq("id", requestToDelete)
+      console.log("Deleting request with ID:", requestToDelete)
 
-      if (error) {
-        if (showDebug) {
-          setDebugInfo({ error })
-        }
-        throw error
+      // Use the API endpoint for deletion
+      const response = await fetch("/api/maintenance/delete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id: requestToDelete }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        setDeleteError(data.error || "Failed to delete request")
+        throw new Error(data.error || "Failed to delete request")
       }
 
       toast({
@@ -232,7 +242,7 @@ export default function MaintenancePage() {
       // Remove the deleted request from the local state
       setRequests((prev) => prev.filter((req) => req.id !== requestToDelete))
 
-      // Also refresh from the database
+      // Refresh the requests list to confirm deletion
       fetchRequests()
     } catch (error: any) {
       console.error("Error deleting maintenance request:", error)
@@ -242,8 +252,10 @@ export default function MaintenancePage() {
         variant: "destructive",
       })
     } finally {
-      // Reset the requestToDelete state
+      // Reset the requestToDelete state and close the dialog
+      setDeleteLoading(false)
       setRequestToDelete(null)
+      setIsDeleteDialogOpen(false)
     }
   }
 
@@ -280,28 +292,6 @@ export default function MaintenancePage() {
   return (
     <div className="container mx-auto p-4 md:p-8">
       <h1 className="text-3xl font-bold mb-6">Maintenance Requests</h1>
-
-      {isAdmin && (
-        <div className="mb-6 flex justify-end">
-          <Button variant="outline" onClick={() => setShowDebug(!showDebug)}>
-            <Bug className="h-4 w-4 mr-2" />
-            {showDebug ? "Hide Debug" : "Debug Tools"}
-          </Button>
-        </div>
-      )}
-
-      {showDebug && debugInfo && (
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Debug Information</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <pre className="bg-slate-100 p-4 rounded-md overflow-auto text-xs">
-              {JSON.stringify(debugInfo, null, 2)}
-            </pre>
-          </CardContent>
-        </Card>
-      )}
 
       <div className="grid md:grid-cols-3 gap-8">
         <div className="md:col-span-2">
@@ -363,7 +353,10 @@ export default function MaintenancePage() {
                                     size="sm"
                                     variant="outline"
                                     className="bg-green-50 text-green-700 border-green-200 hover:bg-green-100 hover:text-green-800"
-                                    onClick={() => setRequestToDelete(request.id)}
+                                    onClick={() => {
+                                      setRequestToDelete(request.id)
+                                      setIsDeleteDialogOpen(true)
+                                    }}
                                   >
                                     <CheckCircle className="h-4 w-4 mr-2" />
                                     Complete
@@ -428,7 +421,7 @@ export default function MaintenancePage() {
       </div>
 
       {/* Confirmation Dialog */}
-      <AlertDialog open={!!requestToDelete} onOpenChange={(open) => !open && setRequestToDelete(null)}>
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Complete Maintenance Request</AlertDialogTitle>
@@ -436,9 +429,20 @@ export default function MaintenancePage() {
               This will mark the request as completed and remove it from the system. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
+
+          {deleteError && (
+            <Alert variant="destructive" className="mt-2">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Error</AlertTitle>
+              <AlertDescription>{deleteError}</AlertDescription>
+            </Alert>
+          )}
+
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setRequestToDelete(null)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete}>Complete</AlertDialogAction>
+            <AlertDialogAction onClick={confirmDelete} disabled={deleteLoading}>
+              {deleteLoading ? "Processing..." : "Complete"}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

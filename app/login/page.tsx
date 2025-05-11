@@ -46,6 +46,10 @@ export default function LoginPage() {
         throw error
       }
 
+      // Set a cookie to remember the user's login
+      document.cookie = `userName=${encodeURIComponent(email)};path=/;max-age=604800;` // 7 days
+      document.cookie = `userLoggedIn=true;path=/;max-age=604800;` // 7 days
+
       toast({
         title: "Login successful",
         description: "You have been logged in successfully.",
