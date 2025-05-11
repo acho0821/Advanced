@@ -8,11 +8,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { FileText, Download, Upload, Trash2, Bug } from "lucide-react"
+import { FileText, Download, Upload, Trash2, Bug, RefreshCw, AlertCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { getSupabaseBrowserClient } from "@/lib/supabase"
 import { useRouter } from "next/navigation"
 import InitializeStorage from "./init-storage"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 interface Document {
   id: string
@@ -35,10 +36,40 @@ export default function DocumentsPage() {
   const [documentType, setDocumentType] = useState("insurance")
   const [showDebug, setShowDebug] = useState(false)
   const [debugInfo, setDebugInfo] = useState<any>(null)
+  const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
   const supabase = getSupabaseBrowserClient()
   const router = useRouter()
+
+  const checkAndHandleBucketStatus = async () => {
+    try {
+      setError(null)
+
+      // Check if bucket exists
+      const { data: buckets, error } = await supabase.storage.listBuckets()
+
+      if (error) {
+        setError("Error checking storage buckets: " + error.message)
+        return false
+      }
+
+      const bucket = buckets.find((b) => b.name === "strata-documents")
+
+      if (!bucket) {
+        setError(
+          "Storage bucket 'strata-documents' not found. Please initialize it first or create it manually in the Supabase dashboard.",
+        )
+        return false
+      }
+
+      return true
+    } catch (error: any) {
+      console.error("Error checking bucket status:", error)
+      setError("Error checking bucket status: " + error.message)
+      return false
+    }
+  }
 
   useEffect(() => {
     const checkSession = async () => {
@@ -76,11 +107,13 @@ export default function DocumentsPage() {
 
     checkSession()
     fetchDocuments()
+    checkAndHandleBucketStatus() // Add this line
   }, [router, supabase])
 
   const fetchDocuments = async () => {
     try {
       setLoading(true)
+      setError(null)
       const { data, error } = await supabase.from("documents").select("*").order("created_at", { ascending: false })
 
       if (error) {
@@ -88,8 +121,9 @@ export default function DocumentsPage() {
       }
 
       setDocuments(data || [])
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching documents:", error)
+      setError("Failed to load documents: " + error.message)
       toast({
         title: "Error",
         description: "Failed to load documents",
@@ -112,44 +146,43 @@ export default function DocumentsPage() {
 
   const checkBucketExists = async () => {
     try {
+      setError(null)
       // Check if bucket exists
       const { data: buckets, error } = await supabase.storage.listBuckets()
 
       if (error) {
-        throw error
+        setError("Error checking buckets: " + error.message)
+        return false
       }
 
-      const bucket = buckets.find((b) => b.name === "strata-documents")
+      // Check for both possible bucket names (with and without hyphen)
+      const bucket = buckets.find(
+        (b) => b.name === "strata-documents" || b.name === "strata_documents" || b.name === "stratadocuments",
+      )
 
-      if (!bucket) {
-        // Create bucket if it doesn't exist
-        await initializeBucket()
+      if (bucket && showDebug) {
+        console.log("Found bucket:", bucket.name)
       }
 
-      return true
-    } catch (error) {
+      return !!bucket
+    } catch (error: any) {
       console.error("Error checking bucket:", error)
+      setError("Error checking bucket: " + error.message)
       return false
     }
   }
 
-  const initializeBucket = async () => {
-    try {
-      const response = await fetch("/api/storage/init-bucket", {
-        method: "POST",
-      })
+  // Add this function at the top of the component
+  const getBucketName = (buckets: any[]) => {
+    // Check for both possible bucket names
+    const bucket = buckets.find(
+      (b) => b.name === "strata-documents" || b.name === "strata_documents" || b.name === "stratadocuments",
+    )
 
-      if (!response.ok) {
-        throw new Error("Failed to initialize storage bucket")
-      }
-
-      return true
-    } catch (error) {
-      console.error("Error initializing bucket:", error)
-      return false
-    }
+    return bucket ? bucket.name : "strata-documents"
   }
 
+  // Then update the handleUpload function to use this
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -174,12 +207,19 @@ export default function DocumentsPage() {
     try {
       setUploading(true)
       setDebugInfo(null)
+      setError(null)
 
-      // Make sure bucket exists
-      const bucketExists = await checkBucketExists()
+      // Check if bucket exists and get the correct name
+      const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets()
 
-      if (!bucketExists) {
-        throw new Error("Storage bucket not available. Please try initializing it again.")
+      if (bucketsError) {
+        throw new Error("Error checking buckets: " + bucketsError.message)
+      }
+
+      const bucketName = getBucketName(buckets)
+
+      if (!bucketName) {
+        throw new Error("Storage bucket not found. Please initialize it first.")
       }
 
       // Create a unique file path to avoid conflicts
@@ -187,12 +227,13 @@ export default function DocumentsPage() {
       const filePath = `${timestamp}_${selectedFile.name.replace(/\s+/g, "_")}`
 
       if (showDebug) {
-        console.log("Uploading file:", filePath, "Size:", selectedFile.size, "Type:", selectedFile.type)
+        console.log("Uploading file to bucket:", bucketName)
+        console.log("File path:", filePath)
       }
 
       // Upload file to Supabase Storage with upsert enabled
       const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("strata-documents")
+        .from(bucketName)
         .upload(filePath, selectedFile, {
           cacheControl: "3600",
           upsert: true,
@@ -243,6 +284,7 @@ export default function DocumentsPage() {
       fetchDocuments()
     } catch (error: any) {
       console.error("Error uploading document:", error)
+      setError("Upload failed: " + error.message)
       toast({
         title: "Error",
         description: error.message || "Failed to upload document",
@@ -253,9 +295,54 @@ export default function DocumentsPage() {
     }
   }
 
+  // Also update the handleDownload function
+  const handleDownload = async (document: Document) => {
+    try {
+      setError(null)
+
+      // Get the correct bucket name
+      const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets()
+
+      if (bucketsError) {
+        throw new Error("Error checking buckets: " + bucketsError.message)
+      }
+
+      const bucketName = getBucketName(buckets)
+
+      if (!bucketName) {
+        throw new Error("Storage bucket not found.")
+      }
+
+      const { data, error } = await supabase.storage.from(bucketName).download(document.file_path)
+
+      if (error) {
+        throw error
+      }
+
+      // Create a download link
+      const url = URL.createObjectURL(data)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = document.name
+      document.body.appendChild(a)
+      a.click()
+      URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch (error: any) {
+      console.error("Error downloading document:", error)
+      setError("Download failed: " + error.message)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to download document",
+        variant: "destructive",
+      })
+    }
+  }
+
   const runDiagnostics = async () => {
     try {
       setDebugInfo(null)
+      setError(null)
 
       // Check bucket exists
       const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets()
@@ -327,34 +414,8 @@ export default function DocumentsPage() {
       }
     } catch (error: any) {
       console.error("Error running diagnostics:", error)
+      setError("Diagnostics failed: " + error.message)
       setDebugInfo({ error: error.message })
-    }
-  }
-
-  const handleDownload = async (document: Document) => {
-    try {
-      const { data, error } = await supabase.storage.from("strata-documents").download(document.file_path)
-
-      if (error) {
-        throw error
-      }
-
-      // Create a download link
-      const url = URL.createObjectURL(data)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = document.name
-      document.body.appendChild(a)
-      a.click()
-      URL.revokeObjectURL(url)
-      document.body.removeChild(a)
-    } catch (error: any) {
-      console.error("Error downloading document:", error)
-      toast({
-        title: "Error",
-        description: error.message || "Failed to download document",
-        variant: "destructive",
-      })
     }
   }
 
@@ -369,6 +430,7 @@ export default function DocumentsPage() {
     }
 
     try {
+      setError(null)
       // Delete file from storage
       const { error: storageError } = await supabase.storage.from("strata-documents").remove([filePath])
 
@@ -392,6 +454,7 @@ export default function DocumentsPage() {
       fetchDocuments()
     } catch (error: any) {
       console.error("Error deleting document:", error)
+      setError("Delete failed: " + error.message)
       toast({
         title: "Error",
         description: error.message || "Failed to delete document",
@@ -429,9 +492,23 @@ export default function DocumentsPage() {
     <div className="container mx-auto p-4 md:p-8">
       <h1 className="text-3xl font-bold mb-6">Document Storage</h1>
 
+      {error && (
+        <Alert variant="destructive" className="mb-6">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
       {isAdmin && (
         <div className="mb-6 flex justify-between items-center">
-          <InitializeStorage />
+          <div className="flex gap-2">
+            <InitializeStorage />
+            <Button variant="outline" onClick={fetchDocuments}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
+          </div>
           <Button variant="outline" onClick={() => setShowDebug(!showDebug)}>
             <Bug className="h-4 w-4 mr-2" />
             {showDebug ? "Hide Debug" : "Debug Tools"}
