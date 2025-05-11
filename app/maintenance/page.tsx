@@ -22,9 +22,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import { CheckCircle } from "lucide-react"
+import { CheckCircle, Bug } from "lucide-react"
 
 interface MaintenanceRequest {
   id: string
@@ -47,6 +46,9 @@ export default function MaintenancePage() {
     title: "",
     description: "",
   })
+  const [showDebug, setShowDebug] = useState(false)
+  const [debugInfo, setDebugInfo] = useState<any>(null)
+  const [requestToDelete, setRequestToDelete] = useState<string | null>(null)
   const { toast } = useToast()
   const supabase = getSupabaseBrowserClient()
   const router = useRouter()
@@ -204,12 +206,21 @@ export default function MaintenancePage() {
     }
   }
 
-  const handleCompleteRequest = async (id: string) => {
+  // This function will be called when the user confirms deletion in the dialog
+  const confirmDelete = async () => {
+    if (!requestToDelete) return
+
     try {
-      // Delete the maintenance request from the database
-      const { error } = await supabase.from("maintenance_requests").delete().eq("id", id)
+      if (showDebug) {
+        console.log("Deleting request with ID:", requestToDelete)
+      }
+
+      const { error } = await supabase.from("maintenance_requests").delete().eq("id", requestToDelete)
 
       if (error) {
+        if (showDebug) {
+          setDebugInfo({ error })
+        }
         throw error
       }
 
@@ -218,15 +229,21 @@ export default function MaintenancePage() {
         description: "Maintenance request completed and removed",
       })
 
-      // Refresh requests list
+      // Remove the deleted request from the local state
+      setRequests((prev) => prev.filter((req) => req.id !== requestToDelete))
+
+      // Also refresh from the database
       fetchRequests()
     } catch (error: any) {
-      console.error("Error completing maintenance request:", error)
+      console.error("Error deleting maintenance request:", error)
       toast({
         title: "Error",
-        description: error.message || "Failed to complete maintenance request",
+        description: error.message || "Failed to delete maintenance request",
         variant: "destructive",
       })
+    } finally {
+      // Reset the requestToDelete state
+      setRequestToDelete(null)
     }
   }
 
@@ -263,6 +280,28 @@ export default function MaintenancePage() {
   return (
     <div className="container mx-auto p-4 md:p-8">
       <h1 className="text-3xl font-bold mb-6">Maintenance Requests</h1>
+
+      {isAdmin && (
+        <div className="mb-6 flex justify-end">
+          <Button variant="outline" onClick={() => setShowDebug(!showDebug)}>
+            <Bug className="h-4 w-4 mr-2" />
+            {showDebug ? "Hide Debug" : "Debug Tools"}
+          </Button>
+        </div>
+      )}
+
+      {showDebug && debugInfo && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Debug Information</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <pre className="bg-slate-100 p-4 rounded-md overflow-auto text-xs">
+              {JSON.stringify(debugInfo, null, 2)}
+            </pre>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid md:grid-cols-3 gap-8">
         <div className="md:col-span-2">
@@ -320,33 +359,15 @@ export default function MaintenancePage() {
                                       Mark Completed
                                     </Button>
                                   )}
-                                  <AlertDialog>
-                                    <AlertDialogTrigger asChild>
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        className="bg-green-50 text-green-700 border-green-200 hover:bg-green-100 hover:text-green-800"
-                                      >
-                                        <CheckCircle className="h-4 w-4 mr-2" />
-                                        Complete
-                                      </Button>
-                                    </AlertDialogTrigger>
-                                    <AlertDialogContent>
-                                      <AlertDialogHeader>
-                                        <AlertDialogTitle>Complete Maintenance Request</AlertDialogTitle>
-                                        <AlertDialogDescription>
-                                          This will mark the request as completed and remove it from the system. This
-                                          action cannot be undone.
-                                        </AlertDialogDescription>
-                                      </AlertDialogHeader>
-                                      <AlertDialogFooter>
-                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                        <AlertDialogAction onClick={() => handleCompleteRequest(request.id)}>
-                                          Complete
-                                        </AlertDialogAction>
-                                      </AlertDialogFooter>
-                                    </AlertDialogContent>
-                                  </AlertDialog>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="bg-green-50 text-green-700 border-green-200 hover:bg-green-100 hover:text-green-800"
+                                    onClick={() => setRequestToDelete(request.id)}
+                                  >
+                                    <CheckCircle className="h-4 w-4 mr-2" />
+                                    Complete
+                                  </Button>
                                 </>
                               )}
                             </div>
@@ -405,6 +426,22 @@ export default function MaintenancePage() {
           </Card>
         </div>
       </div>
+
+      {/* Confirmation Dialog */}
+      <AlertDialog open={!!requestToDelete} onOpenChange={(open) => !open && setRequestToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Complete Maintenance Request</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will mark the request as completed and remove it from the system. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setRequestToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>Complete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

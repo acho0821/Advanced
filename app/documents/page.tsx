@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { FileText, Download, Upload, Trash2 } from "lucide-react"
+import { FileText, Download, Upload, Trash2, Bug } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { getSupabaseBrowserClient } from "@/lib/supabase"
 import { useRouter } from "next/navigation"
@@ -33,6 +33,8 @@ export default function DocumentsPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [documentName, setDocumentName] = useState("")
   const [documentType, setDocumentType] = useState("insurance")
+  const [showDebug, setShowDebug] = useState(false)
+  const [debugInfo, setDebugInfo] = useState<any>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
   const supabase = getSupabaseBrowserClient()
@@ -108,6 +110,46 @@ export default function DocumentsPage() {
     }
   }
 
+  const checkBucketExists = async () => {
+    try {
+      // Check if bucket exists
+      const { data: buckets, error } = await supabase.storage.listBuckets()
+
+      if (error) {
+        throw error
+      }
+
+      const bucket = buckets.find((b) => b.name === "strata-documents")
+
+      if (!bucket) {
+        // Create bucket if it doesn't exist
+        await initializeBucket()
+      }
+
+      return true
+    } catch (error) {
+      console.error("Error checking bucket:", error)
+      return false
+    }
+  }
+
+  const initializeBucket = async () => {
+    try {
+      const response = await fetch("/api/storage/init-bucket", {
+        method: "POST",
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to initialize storage bucket")
+      }
+
+      return true
+    } catch (error) {
+      console.error("Error initializing bucket:", error)
+      return false
+    }
+  }
+
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -131,31 +173,41 @@ export default function DocumentsPage() {
 
     try {
       setUploading(true)
+      setDebugInfo(null)
+
+      // Make sure bucket exists
+      const bucketExists = await checkBucketExists()
+
+      if (!bucketExists) {
+        throw new Error("Storage bucket not available. Please try initializing it again.")
+      }
 
       // Create a unique file path to avoid conflicts
       const timestamp = Date.now()
-      const fileExt = selectedFile.name.split(".").pop()
       const filePath = `${timestamp}_${selectedFile.name.replace(/\s+/g, "_")}`
 
-      console.log("Uploading file:", filePath)
+      if (showDebug) {
+        console.log("Uploading file:", filePath, "Size:", selectedFile.size, "Type:", selectedFile.type)
+      }
 
-      // Upload file to Supabase Storage
+      // Upload file to Supabase Storage with upsert enabled
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from("strata-documents")
         .upload(filePath, selectedFile, {
           cacheControl: "3600",
-          upsert: false,
+          upsert: true,
         })
 
       if (uploadError) {
-        console.error("Upload error:", uploadError)
+        if (showDebug) {
+          setDebugInfo({ uploadError })
+        }
         throw uploadError
       }
 
-      console.log("Upload successful:", uploadData)
-
-      // Get the public URL for the uploaded file
-      const { data: urlData } = supabase.storage.from("strata-documents").getPublicUrl(filePath)
+      if (showDebug) {
+        console.log("Upload successful:", uploadData)
+      }
 
       // Add document record to the database
       const { error: dbError } = await supabase.from("documents").insert({
@@ -167,7 +219,9 @@ export default function DocumentsPage() {
       })
 
       if (dbError) {
-        console.error("Database error:", dbError)
+        if (showDebug) {
+          setDebugInfo({ dbError })
+        }
         throw dbError
       }
 
@@ -196,6 +250,84 @@ export default function DocumentsPage() {
       })
     } finally {
       setUploading(false)
+    }
+  }
+
+  const runDiagnostics = async () => {
+    try {
+      setDebugInfo(null)
+
+      // Check bucket exists
+      const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets()
+
+      const diagnostics: any = {
+        buckets: {
+          success: !bucketsError,
+          data: buckets,
+          error: bucketsError?.message,
+        },
+      }
+
+      const bucket = buckets?.find((b) => b.name === "strata-documents")
+      diagnostics.bucketExists = !!bucket
+
+      if (bucket) {
+        // Try to upload a test file
+        const testBlob = new Blob(["test content"], { type: "text/plain" })
+        const testFile = `test-${Date.now()}.txt`
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from("strata-documents")
+          .upload(testFile, testBlob, { upsert: true })
+
+        diagnostics.testUpload = {
+          success: !uploadError,
+          data: uploadData,
+          error: uploadError?.message,
+        }
+
+        if (!uploadError) {
+          // Try to delete the test file
+          const { error: deleteError } = await supabase.storage.from("strata-documents").remove([testFile])
+
+          diagnostics.testDelete = {
+            success: !deleteError,
+            error: deleteError?.message,
+          }
+        }
+      }
+
+      // Check user permissions
+      const { data: session } = await supabase.auth.getSession()
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", session?.session?.user?.id)
+        .single()
+
+      diagnostics.user = {
+        id: session?.session?.user?.id,
+        role: profile?.role,
+        isAdmin: profile?.role === "admin",
+      }
+
+      setDebugInfo(diagnostics)
+
+      if (diagnostics.testUpload?.success) {
+        toast({
+          title: "Diagnostics",
+          description: "Storage system appears to be working correctly",
+        })
+      } else {
+        toast({
+          title: "Diagnostics",
+          description: "Issues detected with storage system",
+          variant: "destructive",
+        })
+      }
+    } catch (error: any) {
+      console.error("Error running diagnostics:", error)
+      setDebugInfo({ error: error.message })
     }
   }
 
@@ -296,7 +428,35 @@ export default function DocumentsPage() {
   return (
     <div className="container mx-auto p-4 md:p-8">
       <h1 className="text-3xl font-bold mb-6">Document Storage</h1>
-      {isAdmin && <InitializeStorage />}
+
+      {isAdmin && (
+        <div className="mb-6 flex justify-between items-center">
+          <InitializeStorage />
+          <Button variant="outline" onClick={() => setShowDebug(!showDebug)}>
+            <Bug className="h-4 w-4 mr-2" />
+            {showDebug ? "Hide Debug" : "Debug Tools"}
+          </Button>
+        </div>
+      )}
+
+      {isAdmin && showDebug && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Storage Diagnostics</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={runDiagnostics} className="mb-4">
+              Run Diagnostics
+            </Button>
+
+            {debugInfo && (
+              <div className="bg-slate-100 p-4 rounded-md overflow-auto max-h-96">
+                <pre className="text-xs">{JSON.stringify(debugInfo, null, 2)}</pre>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid md:grid-cols-3 gap-8">
         <div className="md:col-span-2">
